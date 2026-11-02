@@ -26,8 +26,9 @@ It matches jobs like "Healthcare AWS foundation", "AWS gap analysis",
 
 1. **Remote state.** S3 bucket (versioned, encrypted, public access blocked)
    with S3 native locking (`use_lockfile = true`), one state key per
-   environment. The bucket and the CI roles come from a small `bootstrap/`
-   stack with local state, run once by hand.
+   environment. The bucket is created by hand once; the CI roles are in the
+   root module, one plan/apply pair per environment, trusting the account's
+   existing GitHub OIDC provider (looked up, not created).
 2. **Network module.** VPC across two AZs with public, private (app) and
    isolated (database) subnets, internet gateway, route tables and NAT.
    Staging uses one NAT gateway to save money; prod can switch to one per AZ
@@ -87,7 +88,7 @@ It matches jobs like "Healthcare AWS foundation", "AWS gap analysis",
 
 | Day | Work |
 |---|---|
-| 1 | `bootstrap/` (state bucket, OIDC provider, plan and apply roles). Network module with routing, NAT and flow logs. Staging network applied. |
+| 1 | State bucket (by hand), OIDC lookup and plan/apply roles in the root module. Network module with routing, NAT and flow logs. Staging network applied. |
 | 2 | ECS (cluster, ALB, service, roles, logs) and RDS modules with security groups and Secrets Manager. Sample service answers through the ALB in staging. |
 | 3 | GitHub Actions: checks, plan and Infracost on PR, apply staging on merge, prod behind approval, destroy workflow. |
 | 4 | Prod environment, logged create-and-destroy run, diagram, cost estimate, README handover, Upwork portfolio entry. |
@@ -101,7 +102,7 @@ GitHub Actions · tflint · checkov · Infracost · draw.io
 
 ## Definition of done
 
-- [ ] `bootstrap/` creates the state bucket, the GitHub OIDC provider and the plan/apply roles.
+- [ ] State bucket exists (hand-made); the root module creates the plan/apply roles against the existing GitHub OIDC provider.
 - [ ] Network, ECS and RDS live in reusable modules with variables and outputs.
 - [ ] `staging` and `prod` deploy from the same code; only tfvars and the backend key differ.
 - [ ] The sample service answers through the ALB; the database is reachable only from the service.

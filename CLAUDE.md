@@ -16,8 +16,10 @@ the "clean, repeatable, two-environment AWS foundation" story clearer.
 
 ## Layout
 
-- `bootstrap/`: state bucket, GitHub OIDC provider, plan role (read-only) and
-  apply role. Local state, run once by hand.
+- State bucket: created by hand once (not in Terraform). The GitHub OIDC
+  provider already exists in the account and is only looked up with a data
+  source. The per-environment plan (read-only) and apply roles live in the root
+  module's `main.tf`; the first apply of each environment is run locally.
 - `modules/network`, `modules/ecs_service`, `modules/rds_postgres`: reusable
   modules, each with `main.tf`, `variables.tf`, `outputs.tf`.
 - Root module (`*.tf` at the top level): wires the modules, S3 backend with
