@@ -464,14 +464,31 @@ data "aws_iam_policy_document" "apply" {
   }
 
   # Encrypted RDS storage and the RDS-managed secret use the AWS managed keys
-  # (aws/rds, aws/secretsmanager). RDS and Secrets Manager use them on the
+  # (aws/rds, aws/secretsmanager). RDS looks the keys up and uses them on the
   # caller's behalf. The key ARNs are not known in advance (AWS creates the
-  # managed keys on first use), so "*" is needed; the ViaService condition
-  # means the role can use keys only through these two services, in this region.
+  # managed keys on first use), so "*" is needed.
+  #
+  # DescribeKey is read-only key metadata. RDS calls it for the Secrets Manager
+  # key without a kms:ViaService value, so it cannot carry that condition
+  # (found in CloudTrail: AccessDenied with the condition).
+  statement {
+    sid       = "DescribeManagedKeys"
+    actions   = ["kms:DescribeKey"]
+    resources = ["*"]
+
+    condition {
+      test     = "StringEquals"
+      variable = "aws:RequestedRegion"
+      values   = [var.aws_region]
+    }
+  }
+
+  # Everything that actually uses a key is limited to RDS and Secrets Manager
+  # in this region through kms:ViaService.
   statement {
     sid = "UseManagedKeysViaRdsAndSecrets"
     actions = [
-      "kms:DescribeKey", "kms:CreateGrant", "kms:GenerateDataKey",
+      "kms:CreateGrant", "kms:GenerateDataKey",
       "kms:GenerateDataKeyWithoutPlaintext", "kms:Decrypt",
     ]
     resources = ["*"]
