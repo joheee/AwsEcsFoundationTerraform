@@ -336,6 +336,7 @@ data "aws_iam_policy_document" "apply" {
       "iam:UpdateAssumeRolePolicy", "iam:TagRole", "iam:UntagRole", "iam:ListRoleTags",
       "iam:PutRolePolicy", "iam:GetRolePolicy", "iam:DeleteRolePolicy",
       "iam:ListRolePolicies", "iam:ListAttachedRolePolicies",
+      "iam:ListInstanceProfilesForRole", # checked before a role is deleted
       "iam:AttachRolePolicy", "iam:DetachRolePolicy",
       "iam:CreatePolicy", "iam:DeletePolicy", "iam:GetPolicy", "iam:GetPolicyVersion",
       "iam:ListPolicyVersions", "iam:CreatePolicyVersion", "iam:DeletePolicyVersion",

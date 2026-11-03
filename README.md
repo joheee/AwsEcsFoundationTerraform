@@ -94,6 +94,9 @@ to the internet at all.
 - **Roles per environment**, named `ecs-foundation-<env>-github-plan` and
   `...-github-apply`. Trust policies pin this exact repository (never
   `repo:owner/*`) and the audience `sts.amazonaws.com`.
+- **Plan roles are provisioned but unused today.** The workflows are manual and
+  run as the apply role. The read-only plan roles (trusting the
+  `pull_request` subject) are kept for adding plan-on-PR later.
 - **Apply is gated by the GitHub Environment.** The apply role trusts only the
   `environment:<env>` subject, so AWS itself refuses prod credentials to any job
   that did not pass the `prod` approval. There is no branch subject.
@@ -165,6 +168,26 @@ choose `staging` or `prod`** in the dropdown.
   runs as the apply role), so the Terraform workflow can re-create the
   environment straight away. Prod waits for approval.
 
+### Changing the CI roles' permissions
+
+The workflows run *as* the apply role, so the pipeline cannot reliably grant
+itself new permissions: if the role lacks one, the run fails before it can
+fix the role. Apply role policy changes locally first, then run the workflow:
+
+```sh
+terraform init -reconfigure -backend-config=envs/<env>.backend.hcl
+terraform apply -var-file=envs/<env>.tfvars -target=aws_iam_role_policy.apply
+```
+
+Two permission details worth knowing, both found by running the pipeline:
+
+- RDS with `manage_master_user_password` and encrypted storage needs the *caller*
+  to be allowed to create the `rds!db-*` secret (`CreateSecret` is checked
+  against the secret's name, not an ARN) and to use the AWS managed `aws/rds`
+  and `aws/secretsmanager` keys.
+- `data "aws_iam_openid_connect_provider"` needs `iam:ListOpenIDConnectProviders`
+  as well as `iam:GetOpenIDConnectProvider`.
+
 ## Outputs
 
 | Output | Meaning |
@@ -227,6 +250,23 @@ Use the **Destroy** workflow for the environment. Notes:
 Destroy environments after demos: NAT gateways, the ALB and RDS are the running
 cost.
 
+## Security scan (Checkov)
+
+Checkov runs in the Terraform workflow and currently reports 18 findings
+without failing the run (195 checks pass). They are accepted or planned:
+
+| Finding | Status |
+|---|---|
+| ALB is HTTP-only (CKV_AWS_2, CKV_AWS_103, CKV_AWS_378, CKV2_AWS_20) | Accepted: HTTPS and a custom domain are out of scope; the obvious next step |
+| ALB open to the internet on port 80 (CKV_AWS_260) | Accepted: it is the public entry point |
+| No WAF on the ALB (CKV2_AWS_28) | Accepted: extra cost, out of scope |
+| Container Insights off (CKV_AWS_65) | Accepted in staging for cost; on in prod |
+| Log retention under 1 year (CKV_AWS_338) | Accepted: a per-environment variable, short in staging for cost |
+| Log groups and Performance Insights use AWS-owned or default keys (CKV_AWS_158, CKV_AWS_354) | Accepted: a customer-managed key adds cost and key-policy upkeep |
+| Writable root filesystem (CKV_AWS_336) | Accepted: the sample nginx image needs it |
+| AZ data source not pinned (CKV_AWS_394) | Accepted: AZs are sliced by count |
+| RDS log exports, query logging, enhanced monitoring, ALB access logs (CKV_AWS_129, CKV2_AWS_30, CKV_AWS_118, CKV_AWS_91) | Planned improvements |
+
 ## Cost per environment
 
 > To be filled from the Infracost table in the Terraform workflow run summary
@@ -242,7 +282,9 @@ replica and extra NAT gateway in prod).
 
 ## Proof of create and destroy
 
-> To be filled after the logged runs.
+> To be filled after the logged runs. Sequence: run **Destroy** for staging,
+> then **Terraform** for staging (a clean create from nothing), `curl` the ALB,
+> then **Destroy** again.
 
 - Create staging from nothing: _run link_
 - Sample service answering through the ALB: _output of the curl above_

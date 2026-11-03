@@ -109,7 +109,7 @@ GitHub Actions · tflint · checkov · Infracost · draw.io
 - [x] `staging` and `prod` deploy from the same code; only tfvars and the backend key differ. _(both applied from the same root module)_
 - [ ] The sample service answers through the ALB; the database is reachable only from the service. _(ALB answers 200 in staging; the database restriction is by security-group design, not yet tested)_
 - [ ] No AWS keys or database passwords in the repo or in Terraform state. _(by design; check the state once)_
-- [ ] The Terraform workflow shows fmt, validate, tflint, checkov, plan and an Infracost estimate for the chosen environment.
-- [ ] Staging applies from the workflow; prod applies only after approval.
-- [ ] A logged run creates staging from nothing, and another destroys it.
+- [ ] The Terraform workflow shows fmt, validate, tflint, checkov, plan and an Infracost estimate for the chosen environment. _(checks and plan run green on staging; checkov is still soft-fail; Infracost needs `INFRACOST_API_KEY`)_
+- [ ] Staging applies from the workflow; prod applies only after approval. _(staging applied from the workflow after the CI role permissions were completed; the prod approval gate is not yet exercised)_
+- [ ] A logged run creates staging from nothing, and another destroys it. _(the first workflow apply resumed from earlier failed runs, so it is not a clean create; destroy run in progress; a clean create run is still needed)_
 - [ ] README has the diagram, bootstrap and destroy steps, outputs table, cost per environment and run links. _(written; cost and run links still to fill)_
