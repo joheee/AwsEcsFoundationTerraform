@@ -452,13 +452,16 @@ data "aws_iam_policy_document" "apply" {
     }
   }
 
-  # RDS creates and owns the master-password secret (rds!db-<id>); Terraform
-  # only needs to read and tag it, and to delete it with the instance.
+  # RDS creates, rotates and deletes the master-password secret (rds!db-<id>)
+  # using the caller's permissions, so the role needs create/update/rotate on
+  # that name pattern only.
   statement {
     sid = "RdsManagedSecret"
     actions = [
-      "secretsmanager:DescribeSecret", "secretsmanager:GetResourcePolicy",
-      "secretsmanager:TagResource", "secretsmanager:DeleteSecret",
+      "secretsmanager:CreateSecret", "secretsmanager:UpdateSecret",
+      "secretsmanager:RotateSecret", "secretsmanager:DescribeSecret",
+      "secretsmanager:GetResourcePolicy", "secretsmanager:TagResource",
+      "secretsmanager:DeleteSecret",
     ]
     resources = ["arn:aws:secretsmanager:${var.aws_region}:${local.account_id}:secret:rds!db-*"]
   }
