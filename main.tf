@@ -147,6 +147,21 @@ resource "aws_iam_role" "plan" {
 }
 
 data "aws_iam_policy_document" "plan" {
+  # The OIDC provider is looked up by URL (a data source), which lists all
+  # providers and then reads the match. List calls take no resource-level
+  # permissions, so "*" is required; the read is pinned to the one provider.
+  statement {
+    sid       = "FindGithubOidcProvider"
+    actions   = ["iam:ListOpenIDConnectProviders"]
+    resources = ["*"]
+  }
+
+  statement {
+    sid       = "ReadGithubOidcProvider"
+    actions   = ["iam:GetOpenIDConnectProvider"]
+    resources = [data.aws_iam_openid_connect_provider.github.arn]
+  }
+
   statement {
     sid       = "StateBucketList"
     actions   = ["s3:ListBucket", "s3:GetBucketVersioning"]
@@ -238,6 +253,21 @@ resource "aws_iam_role" "apply" {
 }
 
 data "aws_iam_policy_document" "apply" {
+  # The OIDC provider is looked up by URL (a data source), which lists all
+  # providers and then reads the match. List calls take no resource-level
+  # permissions, so "*" is required; the read is pinned to the one provider.
+  statement {
+    sid       = "FindGithubOidcProvider"
+    actions   = ["iam:ListOpenIDConnectProviders"]
+    resources = ["*"]
+  }
+
+  statement {
+    sid       = "ReadGithubOidcProvider"
+    actions   = ["iam:GetOpenIDConnectProvider"]
+    resources = [data.aws_iam_openid_connect_provider.github.arn]
+  }
+
   statement {
     sid       = "StateBucketList"
     actions   = ["s3:ListBucket", "s3:GetBucketVersioning"]
