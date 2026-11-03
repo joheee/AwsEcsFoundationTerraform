@@ -46,16 +46,18 @@ It matches jobs like "Healthcare AWS foundation", "AWS gap analysis",
 5. **Two environments from one codebase.** `staging` and `prod` use the same
    root module with different `envs/<env>.tfvars` and backend keys. Sizes,
    NAT count, multi-AZ and deletion protection differ only through variables.
-6. **GitHub Actions with OIDC.** On every pull request: `fmt -check`,
-   `validate`, `tflint`, `checkov`, `plan` for both environments and an
-   Infracost cost diff, posted as PR comments, using a read-only plan role. On
-   merge to `main`: apply staging, then apply prod after a manual approval on
-   the `prod` GitHub Environment. Apply roles trust only this repo's GitHub
-   Environments (so AWS enforces the prod approval); never `repo:joheee/*`.
+6. **GitHub Actions with OIDC.** Two manual workflows, each with a
+   `staging` / `prod` dropdown. The Terraform workflow runs `fmt -check`,
+   `validate`, `tflint` and `checkov`, then plans, applies that exact plan and
+   adds an Infracost estimate to the run summary. It runs under the chosen
+   GitHub Environment, so `prod` needs a manual approval. Apply roles trust
+   only this repo's GitHub Environments (so AWS enforces the prod approval);
+   never `repo:joheee/*`.
 7. **Prove create and destroy.** A manually triggered `destroy` workflow (one
-   environment at a time, needs approval). One logged run where staging is
-   created from nothing, the sample service answers through the ALB, and the
-   whole environment is destroyed again. The run links are the proof.
+   environment at a time, needs approval; it keeps the environment's CI roles so
+   it never cuts off its own access). One logged run where staging is created
+   from nothing, the sample service answers through the ALB, and the whole
+   environment is destroyed again. The run links are the proof.
 8. **Client-style README.** Architecture diagram (draw.io or Mermaid), the
    bootstrap and first-apply steps, the outputs table, how to add a third
    environment, destroy steps, monthly cost per environment (Infracost), and
@@ -90,7 +92,7 @@ It matches jobs like "Healthcare AWS foundation", "AWS gap analysis",
 |---|---|
 | 1 | State bucket (by hand), OIDC lookup and plan/apply roles in the root module. Network module with routing, NAT and flow logs. Staging network applied. |
 | 2 | ECS (cluster, ALB, service, roles, logs) and RDS modules with security groups and Secrets Manager. Sample service answers through the ALB in staging. |
-| 3 | GitHub Actions: checks, plan and Infracost on PR, apply staging on merge, prod behind approval, destroy workflow. |
+| 3 | GitHub Actions: manual Terraform workflow (checks, plan, apply, Infracost) and destroy workflow, both with an environment dropdown; prod behind approval. |
 | 4 | Prod environment, logged create-and-destroy run, diagram, cost estimate, README handover, Upwork portfolio entry. |
 
 ## Tools and software
@@ -102,12 +104,12 @@ GitHub Actions · tflint · checkov · Infracost · draw.io
 
 ## Definition of done
 
-- [ ] State bucket exists (hand-made); the root module creates the plan/apply roles against the existing GitHub OIDC provider.
-- [ ] Network, ECS and RDS live in reusable modules with variables and outputs.
-- [ ] `staging` and `prod` deploy from the same code; only tfvars and the backend key differ.
-- [ ] The sample service answers through the ALB; the database is reachable only from the service.
-- [ ] No AWS keys or database passwords in the repo or in Terraform state.
-- [ ] PRs show fmt, validate, tflint, checkov, plan for both environments and an Infracost diff.
-- [ ] Merge to `main` applies staging; prod applies only after approval.
+- [x] State bucket exists (hand-made); the root module creates the plan/apply roles against the existing GitHub OIDC provider. _(roles created by the first local apply of staging and prod)_
+- [x] Network, ECS and RDS live in reusable modules with variables and outputs.
+- [x] `staging` and `prod` deploy from the same code; only tfvars and the backend key differ. _(both applied from the same root module)_
+- [ ] The sample service answers through the ALB; the database is reachable only from the service. _(ALB answers 200 in staging; the database restriction is by security-group design, not yet tested)_
+- [ ] No AWS keys or database passwords in the repo or in Terraform state. _(by design; check the state once)_
+- [ ] The Terraform workflow shows fmt, validate, tflint, checkov, plan and an Infracost estimate for the chosen environment.
+- [ ] Staging applies from the workflow; prod applies only after approval.
 - [ ] A logged run creates staging from nothing, and another destroys it.
-- [ ] README has the diagram, bootstrap and destroy steps, outputs table, cost per environment and run links.
+- [ ] README has the diagram, bootstrap and destroy steps, outputs table, cost per environment and run links. _(written; cost and run links still to fill)_
