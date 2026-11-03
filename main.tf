@@ -462,6 +462,29 @@ data "aws_iam_policy_document" "apply" {
     ]
     resources = ["arn:aws:secretsmanager:${var.aws_region}:${local.account_id}:secret:rds!db-*"]
   }
+
+  # Encrypted RDS storage and the RDS-managed secret use the AWS managed keys
+  # (aws/rds, aws/secretsmanager). RDS and Secrets Manager use them on the
+  # caller's behalf. The key ARNs are not known in advance (AWS creates the
+  # managed keys on first use), so "*" is needed; the ViaService condition
+  # means the role can use keys only through these two services, in this region.
+  statement {
+    sid = "UseManagedKeysViaRdsAndSecrets"
+    actions = [
+      "kms:DescribeKey", "kms:CreateGrant", "kms:GenerateDataKey",
+      "kms:GenerateDataKeyWithoutPlaintext", "kms:Decrypt",
+    ]
+    resources = ["*"]
+
+    condition {
+      test     = "StringEquals"
+      variable = "kms:ViaService"
+      values = [
+        "rds.${var.aws_region}.amazonaws.com",
+        "secretsmanager.${var.aws_region}.amazonaws.com",
+      ]
+    }
+  }
 }
 
 resource "aws_iam_role_policy" "apply" {
