@@ -458,12 +458,34 @@ data "aws_iam_policy_document" "apply" {
   statement {
     sid = "RdsManagedSecret"
     actions = [
-      "secretsmanager:CreateSecret", "secretsmanager:UpdateSecret",
+      "secretsmanager:UpdateSecret",
       "secretsmanager:RotateSecret", "secretsmanager:DescribeSecret",
       "secretsmanager:GetResourcePolicy", "secretsmanager:TagResource",
       "secretsmanager:DeleteSecret",
     ]
     resources = ["arn:aws:secretsmanager:${var.aws_region}:${local.account_id}:secret:rds!db-*"]
+  }
+
+  # CreateSecret is evaluated against the secret's NAME (the ARN does not exist
+  # yet), so it cannot use the ARN pattern above. "*" is required; the Name
+  # condition limits it to the RDS-managed secret names, and the region
+  # condition to this region.
+  statement {
+    sid       = "RdsManagedSecretCreate"
+    actions   = ["secretsmanager:CreateSecret"]
+    resources = ["*"]
+
+    condition {
+      test     = "StringLike"
+      variable = "secretsmanager:Name"
+      values   = ["rds!db-*"]
+    }
+
+    condition {
+      test     = "StringEquals"
+      variable = "aws:RequestedRegion"
+      values   = [var.aws_region]
+    }
   }
 
   # Encrypted RDS storage and the RDS-managed secret use the AWS managed keys
