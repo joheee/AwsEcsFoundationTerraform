@@ -1,0 +1,127 @@
+name: Terraform
+
+# Manual only. Pick an environment in the dropdown; the run does fmt, validate,
+# tflint and checkov, then plans and applies that one environment. The job
+# declares the chosen GitHub Environment, so prod needs its required-reviewer
+# approval, and the apply role of that environment is the only one AWS lets
+# this job assume.
+#
+# AWS access is OIDC only, no stored keys. Variables needed (all non-secret):
+#   Repository variable:
+#     AWS_REGION                  ap-southeast-2
+#   Variable on each GitHub Environment (staging, prod):
+#     AWS_APPLY_ROLE_ARN          apply_role_arn output of that environment
+# Optional repository secret: INFRACOST_API_KEY (adds a cost table to the run
+# summary; skipped without it).
+on:
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: Environment to plan and apply
+        type: choice
+        options: [staging, prod]
+        required: true
+
+permissions:
+  contents: read
+
+env:
+  TF_VERSION: 1.15.9
+  TF_IN_AUTOMATION: "true"
+
+jobs:
+  checks:
+    name: fmt, validate, tflint, checkov
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: ${{ env.TF_VERSION }}
+
+      - run: terraform fmt -check -recursive
+
+      - run: terraform init -backend=false -input=false
+
+      - run: terraform validate
+
+      - uses: terraform-linters/setup-tflint@v4
+
+      - run: tflint --init
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+
+      - run: tflint --recursive
+
+      # soft_fail while the first findings are triaged; the intentional ones
+      # (HTTP-only ALB, no access logs) are skipped inline once decided.
+      - uses: bridgecrewio/checkov-action@v12
+        with:
+          directory: .
+          framework: terraform
+          quiet: true
+          soft_fail: true
+
+  apply:
+    name: plan and apply (${{ inputs.environment }})
+    needs: checks
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    # The environment's job subject is what the apply role trusts. For prod,
+    # the required reviewers on this GitHub Environment gate the job.
+    environment: ${{ inputs.environment }}
+    # Never two applies at once; state locking is a second line of defence.
+    concurrency:
+      group: terraform-apply
+      cancel-in-progress: false
+    permissions:
+      id-token: write # OIDC token for the apply role
+      contents: read
+    env:
+      INFRACOST_API_KEY: ${{ secrets.INFRACOST_API_KEY }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: ${{ env.TF_VERSION }}
+
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ vars.AWS_APPLY_ROLE_ARN }}
+          aws-region: ${{ vars.AWS_REGION }}
+
+      - run: terraform init -backend-config=envs/${{ inputs.environment }}.backend.hcl -input=false
+
+      - name: Plan
+        run: terraform plan -input=false -no-color -lock-timeout=60s -var-file=envs/${{ inputs.environment }}.tfvars -out=tfplan
+
+      - name: Plan summary
+        run: |
+          {
+            echo "### Terraform plan: ${{ inputs.environment }}"
+            echo '```'
+            terraform show -no-color tfplan
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - uses: infracost/actions/setup@v3
+        if: env.INFRACOST_API_KEY != ''
+        with:
+          api-key: ${{ env.INFRACOST_API_KEY }}
+
+      # Infracost reads the HCL only; it needs no AWS access.
+      - name: Monthly cost estimate
+        if: env.INFRACOST_API_KEY != ''
+        run: |
+          {
+            echo "### Estimated monthly cost: ${{ inputs.environment }}"
+            infracost breakdown --path . \
+              --terraform-var-file envs/${{ inputs.environment }}.tfvars \
+              --format table --no-color
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Apply
+        run: terraform apply -input=false -no-color -lock-timeout=60s tfplan

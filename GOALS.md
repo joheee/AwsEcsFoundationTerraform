@@ -50,8 +50,8 @@ It matches jobs like "Healthcare AWS foundation", "AWS gap analysis",
    `validate`, `tflint`, `checkov`, `plan` for both environments and an
    Infracost cost diff, posted as PR comments, using a read-only plan role. On
    merge to `main`: apply staging, then apply prod after a manual approval on
-   the `prod` GitHub Environment. Apply roles trust only this repo's `main`
-   branch or its environments; never `repo:joheee/*`.
+   the `prod` GitHub Environment. Apply roles trust only this repo's GitHub
+   Environments (so AWS enforces the prod approval); never `repo:joheee/*`.
 7. **Prove create and destroy.** A manually triggered `destroy` workflow (one
    environment at a time, needs approval). One logged run where staging is
    created from nothing, the sample service answers through the ALB, and the

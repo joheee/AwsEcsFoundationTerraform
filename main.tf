@@ -21,12 +21,10 @@ locals {
 
   plan_subjects = [for s in local.repo_subjects : "${s}:pull_request"]
 
-  apply_subjects = flatten([
-    for s in local.repo_subjects : [
-      "${s}:ref:refs/heads/${var.github_branch}",
-      "${s}:environment:${var.environment}",
-    ]
-  ])
+  # Apply is only possible from a job that declares this environment's GitHub
+  # Environment, so prod's required-reviewer approval is enforced by AWS, not
+  # just by the workflow file. There is deliberately no branch subject here.
+  apply_subjects = [for s in local.repo_subjects : "${s}:environment:${var.environment}"]
 }
 
 module "network" {
@@ -37,6 +35,66 @@ module "network" {
   az_count                = var.az_count
   nat_gateway_per_az      = var.nat_gateway_per_az
   flow_log_retention_days = var.flow_log_retention_days
+}
+
+module "ecs_service" {
+  source = "./modules/ecs_service"
+
+  name               = local.name
+  vpc_id             = module.network.vpc_id
+  public_subnet_ids  = module.network.public_subnet_ids
+  private_subnet_ids = module.network.private_subnet_ids
+
+  container_image         = var.container_image
+  container_port          = var.container_port
+  cpu                     = var.service_cpu
+  memory                  = var.service_memory
+  desired_count           = var.service_desired_count
+  alb_deletion_protection = var.alb_deletion_protection
+  container_insights      = var.container_insights
+
+  # The service learns where the database is, and gets the credentials from
+  # Secrets Manager at start-up. The password never passes through Terraform.
+  environment_variables = {
+    DB_HOST = module.rds_postgres.address
+    DB_PORT = tostring(module.rds_postgres.port)
+    DB_NAME = module.rds_postgres.db_name
+  }
+  secrets = {
+    DB_USERNAME = "${module.rds_postgres.master_user_secret_arn}:username::"
+    DB_PASSWORD = "${module.rds_postgres.master_user_secret_arn}:password::"
+  }
+  secret_arns = [module.rds_postgres.master_user_secret_arn]
+}
+
+module "rds_postgres" {
+  source = "./modules/rds_postgres"
+
+  name       = local.name
+  vpc_id     = module.network.vpc_id
+  subnet_ids = module.network.isolated_subnet_ids
+
+  # ALB -> service -> database: only the service may connect.
+  allowed_security_group_ids = [module.ecs_service.service_security_group_id]
+
+  engine_version        = var.db_engine_version
+  instance_class        = var.db_instance_class
+  allocated_storage     = var.db_allocated_storage
+  multi_az              = var.db_multi_az
+  backup_retention_days = var.db_backup_retention_days
+  deletion_protection   = var.db_deletion_protection
+  skip_final_snapshot   = var.db_skip_final_snapshot
+}
+
+# The service may talk to the database port, and only to the database. Kept in
+# the root so neither module needs to know about the other.
+resource "aws_vpc_security_group_egress_rule" "service_to_db" {
+  security_group_id            = module.ecs_service.service_security_group_id
+  description                  = "PostgreSQL to the database"
+  ip_protocol                  = "tcp"
+  from_port                    = module.rds_postgres.port
+  to_port                      = module.rds_postgres.port
+  referenced_security_group_id = module.rds_postgres.security_group_id
 }
 
 # ---------------------------------------------------------------------------
@@ -143,7 +201,27 @@ data "aws_iam_policy_document" "plan" {
     ]
   }
 
-  # Extended on Day 2 with ECS, ELB, RDS and Secrets Manager read actions.
+  # ECS, ELB, RDS and Secrets Manager reads. All are Describe/List calls that
+  # take no resource-level permissions, so "*" is required; limited to this region.
+  statement {
+    sid = "ReadPlatform"
+    actions = [
+      "ecs:Describe*",
+      "ecs:List*",
+      "elasticloadbalancing:Describe*",
+      "rds:Describe*",
+      "rds:ListTagsForResource",
+      "secretsmanager:DescribeSecret",
+      "secretsmanager:GetResourcePolicy",
+    ]
+    resources = ["*"]
+
+    condition {
+      test     = "StringEquals"
+      variable = "aws:RequestedRegion"
+      values   = [var.aws_region]
+    }
+  }
 }
 
 resource "aws_iam_role_policy" "plan" {
@@ -152,10 +230,10 @@ resource "aws_iam_role_policy" "plan" {
   policy = data.aws_iam_policy_document.plan.json
 }
 
-# Apply role: the main branch and this environment's GitHub Environment only.
+# Apply role: this environment's GitHub Environment only (no branch subject).
 resource "aws_iam_role" "apply" {
   name               = "${local.name}-github-apply"
-  description        = "Role for terraform apply and destroy from main and the ${var.environment} environment."
+  description        = "Role for terraform apply and destroy from the ${var.environment} GitHub Environment."
   assume_role_policy = data.aws_iam_policy_document.github_trust["apply"].json
 }
 
@@ -248,12 +326,112 @@ data "aws_iam_policy_document" "apply" {
     condition {
       test     = "StringEquals"
       variable = "iam:PassedToService"
-      values   = ["vpc-flow-logs.amazonaws.com"]
+      values   = ["vpc-flow-logs.amazonaws.com", "ecs-tasks.amazonaws.com"]
     }
   }
 
-  # Extended on Day 2 with ECS, ELB, RDS and Secrets Manager actions, and the
-  # matching ecs-tasks.amazonaws.com / monitoring.rds.amazonaws.com PassRole.
+  # ECS and RDS create their service-linked roles on first use in an account.
+  statement {
+    sid       = "ServiceLinkedRoles"
+    actions   = ["iam:CreateServiceLinkedRole"]
+    resources = ["arn:aws:iam::${local.account_id}:role/aws-service-role/*"]
+
+    condition {
+      test     = "StringEquals"
+      variable = "iam:AWSServiceName"
+      values = [
+        "ecs.amazonaws.com",
+        "rds.amazonaws.com",
+        "elasticloadbalancing.amazonaws.com",
+      ]
+    }
+  }
+
+  # ECS: resource-level where the API supports it.
+  statement {
+    sid = "ProjectEcs"
+    actions = [
+      "ecs:CreateCluster", "ecs:DeleteCluster", "ecs:UpdateCluster",
+      "ecs:UpdateClusterSettings", "ecs:PutClusterCapacityProviders",
+      "ecs:CreateService", "ecs:UpdateService", "ecs:DeleteService",
+      "ecs:TagResource", "ecs:UntagResource", "ecs:ListTagsForResource",
+    ]
+    resources = [
+      "arn:aws:ecs:${var.aws_region}:${local.account_id}:cluster/${local.name_prefix}",
+      "arn:aws:ecs:${var.aws_region}:${local.account_id}:service/${local.name_prefix}/*",
+      "arn:aws:ecs:${var.aws_region}:${local.account_id}:task-definition/${local.name_prefix}:*",
+    ]
+  }
+
+  # Task definition registration and the Describe/List calls do not support
+  # resource-level permissions.
+  statement {
+    sid = "EcsNoResourceLevel"
+    actions = [
+      "ecs:RegisterTaskDefinition", "ecs:DeregisterTaskDefinition",
+      "ecs:DeleteTaskDefinitions", "ecs:Describe*", "ecs:List*",
+    ]
+    resources = ["*"]
+
+    condition {
+      test     = "StringEquals"
+      variable = "aws:RequestedRegion"
+      values   = [var.aws_region]
+    }
+  }
+
+  # Load balancers, target groups and listeners are created by name pattern;
+  # most ELB create/modify actions cannot be scoped to an ARN that does not
+  # exist yet, so "*" is used with the region condition.
+  statement {
+    sid       = "LoadBalancing"
+    actions   = ["elasticloadbalancing:*"]
+    resources = ["*"]
+
+    condition {
+      test     = "StringEquals"
+      variable = "aws:RequestedRegion"
+      values   = [var.aws_region]
+    }
+  }
+
+  statement {
+    sid = "ProjectRds"
+    actions = [
+      "rds:CreateDBInstance", "rds:ModifyDBInstance", "rds:DeleteDBInstance",
+      "rds:RebootDBInstance", "rds:CreateDBSubnetGroup", "rds:ModifyDBSubnetGroup",
+      "rds:DeleteDBSubnetGroup", "rds:AddTagsToResource", "rds:RemoveTagsFromResource",
+      "rds:ListTagsForResource", "rds:CreateDBSnapshot",
+    ]
+    resources = [
+      "arn:aws:rds:${var.aws_region}:${local.account_id}:db:${local.name_prefix}",
+      "arn:aws:rds:${var.aws_region}:${local.account_id}:subgrp:${local.name_prefix}",
+      "arn:aws:rds:${var.aws_region}:${local.account_id}:snapshot:${local.name_prefix}",
+    ]
+  }
+
+  statement {
+    sid       = "RdsDescribe"
+    actions   = ["rds:Describe*"]
+    resources = ["*"]
+
+    condition {
+      test     = "StringEquals"
+      variable = "aws:RequestedRegion"
+      values   = [var.aws_region]
+    }
+  }
+
+  # RDS creates and owns the master-password secret (rds!db-<id>); Terraform
+  # only needs to read and tag it, and to delete it with the instance.
+  statement {
+    sid = "RdsManagedSecret"
+    actions = [
+      "secretsmanager:DescribeSecret", "secretsmanager:GetResourcePolicy",
+      "secretsmanager:TagResource", "secretsmanager:DeleteSecret",
+    ]
+    resources = ["arn:aws:secretsmanager:${var.aws_region}:${local.account_id}:secret:rds!db-*"]
+  }
 }
 
 resource "aws_iam_role_policy" "apply" {

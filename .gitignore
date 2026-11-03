@@ -8,6 +8,6 @@ tfplan
 override.tf
 override.tf.json
 
-# envs/*.tfvars hold only non-secret sizing and names, so they ARE committed.
+# envs/<env>.tfvars hold only non-secret sizing and names, so they ARE committed.
 # Anything with real values goes in a *.secret.tfvars file, which is ignored.
-*.tfvars
+*.secret.tfvars

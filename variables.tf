@@ -37,12 +37,6 @@ variable "github_repo" {
   }
 }
 
-variable "github_branch" {
-  description = "Branch whose workflow runs may assume the apply role."
-  type        = string
-  default     = "main"
-}
-
 variable "vpc_cidr" {
   description = "CIDR of the VPC. Keep it unique per environment."
   type        = string
@@ -64,4 +58,94 @@ variable "flow_log_retention_days" {
   description = "Retention of the VPC flow log group."
   type        = number
   default     = 14
+}
+
+# ---------------------------------------------------------------------------
+# Container platform
+# ---------------------------------------------------------------------------
+variable "container_image" {
+  description = "Image the service runs (a public sample image by default)."
+  type        = string
+  default     = "public.ecr.aws/nginx/nginx:stable"
+}
+
+variable "container_port" {
+  description = "Port the container listens on."
+  type        = number
+  default     = 80
+}
+
+variable "service_cpu" {
+  description = "Fargate task CPU units."
+  type        = number
+  default     = 256
+}
+
+variable "service_memory" {
+  description = "Fargate task memory in MiB."
+  type        = number
+  default     = 512
+}
+
+variable "service_desired_count" {
+  description = "Number of running tasks."
+  type        = number
+  default     = 1
+}
+
+variable "alb_deletion_protection" {
+  description = "Deletion protection on the ALB."
+  type        = bool
+  default     = false
+}
+
+variable "container_insights" {
+  description = "CloudWatch Container Insights on the ECS cluster (extra cost)."
+  type        = bool
+  default     = false
+}
+
+# ---------------------------------------------------------------------------
+# Database
+# ---------------------------------------------------------------------------
+variable "db_engine_version" {
+  description = "PostgreSQL engine version."
+  type        = string
+  default     = "17"
+}
+
+variable "db_instance_class" {
+  description = "RDS instance class."
+  type        = string
+  default     = "db.t4g.micro"
+}
+
+variable "db_allocated_storage" {
+  description = "Initial database storage in GiB."
+  type        = number
+  default     = 20
+}
+
+variable "db_multi_az" {
+  description = "Multi-AZ database (prod)."
+  type        = bool
+  default     = false
+}
+
+variable "db_backup_retention_days" {
+  description = "Automated backup retention in days."
+  type        = number
+  default     = 7
+}
+
+variable "db_deletion_protection" {
+  description = "Deletion protection on the database (prod)."
+  type        = bool
+  default     = false
+}
+
+variable "db_skip_final_snapshot" {
+  description = "Skip the final snapshot when the database is destroyed (staging)."
+  type        = bool
+  default     = true
 }
