@@ -4,8 +4,10 @@ name: Destroy
 # Environment, so prod needs its required-reviewer approval, and the apply
 # role of that environment is the only one that can be assumed.
 #
-# The CI roles live in the same state, so they are destroyed with the
-# environment. Re-create them with a local apply before the next run.
+# The environment's CI roles (plan and apply) are deliberately NOT destroyed:
+# the job runs as the apply role, and deleting its policy mid-run would cut off
+# its own access to the state bucket. They cost nothing, so the next Terraform
+# workflow run can re-create the environment with no local step.
 on:
   workflow_dispatch:
     inputs:
@@ -70,9 +72,16 @@ jobs:
             -target=module.ecs_service.aws_lb.this \
             -target=module.rds_postgres.aws_db_instance.this
 
-      - name: Destroy
+      # Targets are the three modules plus the root security group rule that
+      # joins them. Everything else in the root (the CI roles and their
+      # policies) is left alone. Dependents of the targets are destroyed too.
+      - name: Destroy (everything except the CI roles)
         run: |
           terraform destroy -input=false -auto-approve -no-color -lock-timeout=60s \
             -var-file=envs/${{ inputs.environment }}.tfvars \
             -var alb_deletion_protection=false \
-            -var db_deletion_protection=false
+            -var db_deletion_protection=false \
+            -target=aws_vpc_security_group_egress_rule.service_to_db \
+            -target=module.ecs_service \
+            -target=module.rds_postgres \
+            -target=module.network

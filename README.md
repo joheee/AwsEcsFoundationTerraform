@@ -160,7 +160,10 @@ choose `staging` or `prod`** in the dropdown.
   plans, writes the plan to the run summary and applies exactly that plan. The
   `prod` run waits for the Environment's reviewer approval.
 - **Destroy**: type the environment name again to confirm. It disables the ALB
-  and database deletion protection, then destroys. Prod waits for approval.
+  and database deletion protection, then destroys the network, ECS service and
+  database. The environment's CI roles are kept (they cost nothing, and the job
+  runs as the apply role), so the Terraform workflow can re-create the
+  environment straight away. Prod waits for approval.
 
 ## Outputs
 
@@ -204,13 +207,22 @@ No module changes are needed.
 
 Use the **Destroy** workflow for the environment. Notes:
 
-- The CI roles live in the same state, so they are destroyed with the
-  environment. Re-create them with a local apply before the next pipeline run.
+- The CI roles stay. They are in the same state, but the workflow excludes them
+  with `-target`, because the job runs as the apply role and deleting its policy
+  mid-run would cut off its own state access. Re-create the environment with the
+  Terraform workflow; no local step is needed.
 - Prod keeps a final database snapshot named `ecs-foundation-prod-final`. Delete
   it before destroying prod a second time, or the name will clash.
-- To destroy from your machine instead:
+- A full local teardown, roles included, is
   `terraform destroy -var-file=envs/<env>.tfvars` (turn off deletion protection
-  first in prod).
+  first in prod). After that the roles must be re-created locally, see below.
+- To re-create only the roles after a full teardown:
+
+  ```sh
+  terraform apply -var-file=envs/<env>.tfvars \
+    -target=aws_iam_role.plan -target=aws_iam_role_policy.plan \
+    -target=aws_iam_role.apply -target=aws_iam_role_policy.apply
+  ```
 
 Destroy environments after demos: NAT gateways, the ALB and RDS are the running
 cost.
