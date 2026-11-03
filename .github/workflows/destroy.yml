@@ -62,15 +62,28 @@ jobs:
       - run: terraform init -backend-config=envs/${{ inputs.environment }}.backend.hcl -input=false
 
       # Prod has deletion protection on the ALB and the database. Switch it off
-      # first (only those two resources), then destroy.
+      # first, then destroy. A targeted apply creates anything that is missing
+      # from state (it re-created a whole VPC and a database once, after a
+      # half-finished destroy), so only resources that already exist in state
+      # are targeted, and the step is skipped if there are none.
       - name: Disable deletion protection
         run: |
+          existing=$(terraform state list)
+          targets=()
+          for addr in module.ecs_service.aws_lb.this module.rds_postgres.aws_db_instance.this; do
+            if grep -qxF "$addr" <<< "$existing"; then
+              targets+=("-target=$addr")
+            fi
+          done
+          if [ ${#targets[@]} -eq 0 ]; then
+            echo "Neither the ALB nor the database is in state; nothing to unprotect."
+            exit 0
+          fi
           terraform apply -input=false -auto-approve -no-color -lock-timeout=60s \
             -var-file=envs/${{ inputs.environment }}.tfvars \
             -var alb_deletion_protection=false \
             -var db_deletion_protection=false \
-            -target=module.ecs_service.aws_lb.this \
-            -target=module.rds_postgres.aws_db_instance.this
+            "${targets[@]}"
 
       # Targets are the three modules plus the root security group rule that
       # joins them. Everything else in the root (the CI roles and their
