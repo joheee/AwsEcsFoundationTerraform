@@ -276,9 +276,9 @@ environment when it is not being demoed.
 > then **Terraform** for staging (a clean create from nothing), `curl` the ALB,
 > then **Destroy** again.
 
-- Create staging from nothing: _run link_
+- Create staging from nothing: [Terraform run #7](https://github.com/joheee/AwsEcsFoundationTerraform/actions/runs/41720333597) (50 resources added; the CI roles are kept between runs by design)
 - Sample service answering through the ALB: _output of the curl above_
-- Destroy staging: _run link_
+- Destroy staging: [Destroy run #5](https://github.com/joheee/AwsEcsFoundationTerraform/actions/runs/41724747536) (50 resources destroyed)
 
 ## Scope
 
