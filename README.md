@@ -12,47 +12,24 @@ Region: `ap-southeast-2`. Terraform >= 1.10, AWS provider 6.x.
 ## Architecture
 
 ```mermaid
-flowchart TB
+flowchart LR
     user([Internet])
     gh([GitHub Actions])
 
-    subgraph aws["AWS account, ap-southeast-2"]
-        oidc["IAM OIDC provider<br/>(already in the account)"]
-        roles["Per-environment IAM roles<br/>plan (read-only) and apply"]
-        state[("S3 state bucket<br/>versioned, encrypted, native locking<br/>one key per environment")]
-        secret[["Secrets Manager<br/>generated DB credentials"]]
-
-        subgraph vpc["VPC (one per environment, 2 AZs)"]
-            igw[Internet gateway]
-
-            subgraph pub["Public subnets"]
-                alb["Application Load Balancer<br/>HTTP :80"]
-                nat["NAT gateway<br/>(1 in staging, 1 per AZ in prod)"]
-            end
-
-            subgraph priv["Private subnets"]
-                svc["ECS Fargate service<br/>cluster, task and execution roles"]
-            end
-
-            subgraph iso["Isolated subnets (no internet route)"]
-                db[("RDS PostgreSQL<br/>encrypted, private")]
-            end
-
-            logs[/"CloudWatch Logs<br/>service logs and VPC flow logs"/]
+    subgraph aws["AWS · ap-southeast-2 · staging and prod"]
+        subgraph vpc["VPC · 2 availability zones"]
+            alb["Load balancer<br/>public subnets"]
+            svc["ECS Fargate<br/>private subnets"]
+            db[("RDS PostgreSQL<br/>isolated subnets")]
         end
+        iam["IAM roles<br/>OIDC, no keys"]
+        state[("S3 state<br/>with locking")]
     end
 
-    user -->|HTTP| igw --> alb
-    alb -->|"app port, ALB SG only"| svc
-    svc -->|"5432, service SG only"| db
-    svc -->|"HTTPS: image pull, secrets, logs"| nat --> igw
-    svc -.->|reads at start-up| secret
-    db -.->|"RDS generates and stores the password"| secret
-    svc -.-> logs
-
-    gh -->|"OIDC token (no stored keys)"| oidc --> roles
-    roles -->|"terraform plan / apply"| vpc
-    roles --> state
+    user --> alb --> svc --> db
+    gh --> iam
+    iam -.->|"terraform apply"| vpc
+    iam -.-> state
 ```
 
 Traffic is only allowed along `internet -> ALB -> service -> database`; each hop
