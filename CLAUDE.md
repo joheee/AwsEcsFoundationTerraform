@@ -28,13 +28,15 @@ the "clean, repeatable, two-environment AWS foundation" story clearer.
   the only place environments differ. Init with
   `terraform init -backend-config=envs/<env>.backend.hcl` and plan with
   `-var-file=envs/<env>.tfvars`.
-- `.github/workflows/`: `terraform.yml` (PR checks and plan, apply on merge)
-  and `destroy.yml` (manual, per environment, needs approval).
+- `.github/workflows/`: `terraform.yml` (manual, environment dropdown:
+  checks, plan, apply that plan, Infracost) and `destroy.yml` (manual, per
+  environment, keeps the CI roles). Prod needs the GitHub Environment approval.
 
 ## Working rules
 
-- Never commit secrets, `*.tfstate`, `.terraform/`, or tfvars with real
-  secret values. Environment tfvars hold only non-secret sizing and names.
+- Never commit secrets, `*.tfstate`, saved plan files (`tfplan`,
+  `<env>-tfplan`), `.terraform/`, or tfvars with real secret values.
+  Environment tfvars hold only non-secret sizing and names.
 - Database passwords never go through Terraform: use
   `manage_master_user_password = true` and pass the secret ARN to ECS.
 - Least privilege: scope IAM policies to specific ARNs. Explain any `"*"`
@@ -48,8 +50,12 @@ the "clean, repeatable, two-environment AWS foundation" story clearer.
 - Don't rename or remove outputs listed in the README; add new ones.
 - Run `terraform fmt -recursive`, `terraform validate` and `tflint` before
   every commit.
+- The workflows run as the apply role, so they cannot grant themselves new
+  permissions. Apply CI role policy changes locally first
+  (`-target=aws_iam_role_policy.apply`), then run the workflow.
 - Never run `terraform apply` or `destroy` without being asked; show the plan
-  first. Destroy environments after demos to keep costs down.
+  first. Destroy environments after demos to keep costs down, and delete the
+  `ecs-foundation-prod-final` snapshot when it is no longer needed.
 - Commits: author `joheee <johevinblesstowi07@gmail.com>`, no Co-Authored-By
   trailer. Ask before committing or pushing.
 - Tick the boxes in the GOALS.md "Definition of done" as items are finished.
