@@ -28,7 +28,9 @@ It matches jobs like "Healthcare AWS foundation", "AWS gap analysis",
    with S3 native locking (`use_lockfile = true`), one state key per
    environment. The bucket is created by hand once; the CI roles are in the
    root module, one plan/apply pair per environment, trusting the account's
-   existing GitHub OIDC provider (looked up, not created).
+   existing GitHub OIDC provider (looked up, not created). The workflows run
+   as the apply role; the read-only plan role (trusting the `pull_request`
+   subject) is kept for adding plan-on-PR later.
 2. **Network module.** VPC across two AZs with public, private (app) and
    isolated (database) subnets, internet gateway, route tables and NAT.
    Staging uses one NAT gateway to save money; prod can switch to one per AZ
@@ -84,7 +86,10 @@ It matches jobs like "Healthcare AWS foundation", "AWS gap analysis",
   instances, so this should not matter, but avoid data sources or modules
   that list instances.
 - Keep it cheap: destroy environments when not demoing. Running costs are
-  mostly NAT gateway, ALB and RDS.
+  mostly NAT gateway, ALB and RDS. Destroying prod keeps a final database
+  snapshot (`ecs-foundation-prod-final`); delete it when it is no longer needed.
+- Saved plan files (`tfplan`, `<env>-tfplan`) contain a state snapshot and are
+  never committed.
 
 ## Plan (4 days)
 
@@ -100,16 +105,16 @@ It matches jobs like "Healthcare AWS foundation", "AWS gap analysis",
 Terraform (>= 1.10) · AWS provider 6.x · Amazon VPC · NAT gateway · Amazon ECS
 on Fargate · Application Load Balancer · Amazon RDS for PostgreSQL · AWS
 Secrets Manager · Amazon S3 (state) · AWS IAM + GitHub OIDC · CloudWatch Logs ·
-GitHub Actions · tflint · checkov · Infracost · draw.io
+GitHub Actions · tflint · checkov · Infracost · Mermaid
 
 ## Definition of done
 
 - [x] State bucket exists (hand-made); the root module creates the plan/apply roles against the existing GitHub OIDC provider. _(roles created by the first local apply of staging and prod)_
 - [x] Network, ECS and RDS live in reusable modules with variables and outputs.
-- [x] `staging` and `prod` deploy from the same code; only tfvars and the backend key differ. _(both applied from the same root module)_
-- [ ] The sample service answers through the ALB; the database is reachable only from the service. _(ALB answers 200 in staging; the database restriction is by security-group design, not yet tested)_
-- [ ] No AWS keys or database passwords in the repo or in Terraform state. _(by design; check the state once)_
-- [ ] The Terraform workflow shows fmt, validate, tflint, checkov, plan and an Infracost estimate for the chosen environment. _(checks and plan run green on staging; checkov is still soft-fail; Infracost needs `INFRACOST_API_KEY`)_
-- [ ] Staging applies from the workflow; prod applies only after approval. _(staging applied from the workflow after the CI role permissions were completed; the prod approval gate is not yet exercised)_
-- [ ] A logged run creates staging from nothing, and another destroys it. _(the first workflow apply resumed from earlier failed runs, so it is not a clean create; destroy run in progress; a clean create run is still needed)_
-- [ ] README has the diagram, bootstrap and destroy steps, outputs table, cost per environment and run links. _(written; cost and run links still to fill)_
+- [x] `staging` and `prod` deploy from the same code; only tfvars and the backend key differ. _(both applied from the workflow: staging run #7, prod run #8)_
+- [ ] The sample service answers through the ALB; the database is reachable only from the service. _(ALB answers 200 in staging; the database restriction is by design: isolated subnets with no route, `publicly_accessible = false`, one ingress rule from the service SG. Still to record: the curl output and the DB security group rules in the README)_
+- [ ] No AWS keys or database passwords in the repo or in Terraform state. _(by design, and the plan files showed `password: null`; run `terraform state pull | grep -i '"password"'` once per environment. The committed `prod-tfplan` / `staging-tfplan` files must be removed)_
+- [ ] The Terraform workflow shows fmt, validate, tflint, checkov, plan and an Infracost estimate for the chosen environment. _(checks and plan run green; checkov is soft-fail with its 18 findings triaged in the README; Infracost is skipped until the `INFRACOST_API_KEY` secret is set)_
+- [ ] Staging applies from the workflow; prod applies only after approval. _(staging and prod both applied from the workflow, but prod run #8 started 3 seconds after the checks with no approval recorded: the `prod` Environment needs required reviewers, then one approved run)_
+- [x] A logged run creates staging from nothing, and another destroys it. _(Terraform [run #7](https://github.com/joheee/AwsEcsFoundationTerraform/actions/runs/41720333597): 50 added from an empty environment, CI roles kept by design; Destroy [run #5](https://github.com/joheee/AwsEcsFoundationTerraform/actions/runs/41724747536): 50 destroyed)_
+- [ ] README has the diagram, bootstrap and destroy steps, outputs table, cost per environment and run links. _(diagram, steps, outputs and run links done; cost table waits for Infracost; curl output still to paste)_

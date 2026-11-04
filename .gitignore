@@ -5,6 +5,7 @@
 crash.log
 *.tfplan
 tfplan
+*-tfplan
 override.tf
 override.tf.json
 
