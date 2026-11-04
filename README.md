@@ -269,16 +269,29 @@ without failing the run (195 checks pass). They are accepted or planned:
 
 ## Cost per environment
 
-> To be filled from the Infracost table in the Terraform workflow run summary
-> (set `INFRACOST_API_KEY`).
+Estimated by Infracost from the Terraform code (the table in the Terraform
+workflow run summary). Baseline only, always-on, 730 hours a month, in USD.
 
 | Environment | Estimated monthly cost |
 |---|---|
-| staging | _from Infracost_ |
-| prod | _from Infracost_ |
+| staging | ~$93 |
+| prod | ~$236 |
 
-The main drivers are the NAT gateway(s), the ALB and RDS (plus the multi-AZ
-replica and extra NAT gateway in prod).
+Breakdown:
+
+| Resource | staging | prod |
+|---|---|---|
+| NAT gateways | $43.07 (1) | $86.14 (2) |
+| ALB | $18.40 | $18.40 |
+| RDS (instance + gp3 storage) | $21.01 (`db.t4g.micro`, single-AZ, 20 GB) | $88.26 (`db.t4g.small`, multi-AZ, 50 GB) |
+| ECS Fargate | $10.80 (1 task, 0.25 vCPU / 0.5 GB) | $43.22 (2 tasks, 0.5 vCPU / 1 GB each) |
+| **Total** | **$93.28** | **$236.01** |
+
+Usage-based charges are not included: NAT data processed ($0.059 per GB), ALB
+capacity units, CloudWatch Logs ingestion, backup storage beyond the DB size and
+Performance Insights API calls. The main drivers are the NAT gateway(s), the ALB
+and RDS (plus the multi-AZ replica and extra NAT gateway in prod). Destroy the
+environment when it is not being demoed.
 
 ## Proof of create and destroy
 
