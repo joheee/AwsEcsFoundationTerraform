@@ -272,9 +272,9 @@ environment when it is not being demoed.
 
 ## Proof of create and destroy
 
-> To be filled after the logged runs. Sequence: run **Destroy** for staging,
-> then **Terraform** for staging (a clean create from nothing), `curl` the ALB,
-> then **Destroy** again.
+> Sequence used: run **Destroy** for staging, then **Terraform** for staging (a
+> clean create from nothing), `curl` the ALB, then **Destroy** again. The curl
+> output is still to be pasted below.
 
 - Create staging from nothing: [Terraform run #7](https://github.com/joheee/AwsEcsFoundationTerraform/actions/runs/41720333597) (50 resources added; the CI roles are kept between runs by design)
 - Sample service answering through the ALB: _output of the curl above_
