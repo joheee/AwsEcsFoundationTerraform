@@ -10,6 +10,13 @@ locals {
   state_bucket_arn = "arn:aws:s3:::${var.state_bucket_name}"
   name_prefix      = "${var.project}-*"
 
+  # Roles this environment's Terraform creates for services. The apply role is
+  # allowed to change only these (see the IAM statements in the apply policy).
+  service_role_arns = [
+    for r in ["ecs-execution", "ecs-task", "vpc-flow-logs"] :
+    "arn:aws:iam::${local.account_id}:role/${local.name}-${r}"
+  ]
+
   # GitHub may put numeric ids into the subject (repo:owner@<id>/name@<id>:...).
   # StringLike lets the ids vary while owner, repo name and subject stay pinned.
   # The plain form covers repos that still use the old subject format.
@@ -327,32 +334,52 @@ data "aws_iam_policy_document" "apply" {
     }
   }
 
-  # IAM: only roles and policies named after the project. IAM is global, so no
-  # region condition applies.
+  # IAM, read side: Terraform refreshes every role in this state, including the
+  # plan and apply roles themselves, so reads cover all project-named roles.
+  # IAM is global, so no region condition applies.
   statement {
-    sid = "ProjectIam"
+    sid = "ProjectIamRead"
     actions = [
-      "iam:CreateRole", "iam:DeleteRole", "iam:GetRole", "iam:UpdateRole",
-      "iam:UpdateAssumeRolePolicy", "iam:TagRole", "iam:UntagRole", "iam:ListRoleTags",
-      "iam:PutRolePolicy", "iam:GetRolePolicy", "iam:DeleteRolePolicy",
-      "iam:ListRolePolicies", "iam:ListAttachedRolePolicies",
+      "iam:GetRole", "iam:GetRolePolicy", "iam:ListRolePolicies",
+      "iam:ListAttachedRolePolicies", "iam:ListRoleTags",
       "iam:ListInstanceProfilesForRole", # checked before a role is deleted
-      "iam:AttachRolePolicy", "iam:DetachRolePolicy",
-      "iam:CreatePolicy", "iam:DeletePolicy", "iam:GetPolicy", "iam:GetPolicyVersion",
-      "iam:ListPolicyVersions", "iam:CreatePolicyVersion", "iam:DeletePolicyVersion",
-      "iam:TagPolicy", "iam:UntagPolicy",
     ]
-    resources = [
-      "arn:aws:iam::${local.account_id}:role/${local.name_prefix}",
-      "arn:aws:iam::${local.account_id}:policy/${local.name_prefix}",
+    resources = ["arn:aws:iam::${local.account_id}:role/${local.name_prefix}"]
+  }
+
+  # IAM, write side: only this environment's service roles, by exact name. The
+  # plan and apply roles are deliberately not listed, so this role cannot
+  # rewrite its own policy or trust, nor the other environment's apply role.
+  # Change CI roles locally (-target=aws_iam_role_policy.apply), not from CI.
+  statement {
+    sid = "ProjectServiceRolesWrite"
+    actions = [
+      "iam:CreateRole", "iam:DeleteRole", "iam:UpdateRole",
+      "iam:UpdateAssumeRolePolicy", "iam:TagRole", "iam:UntagRole",
+      "iam:PutRolePolicy", "iam:DeleteRolePolicy",
     ]
+    resources = local.service_role_arns
+  }
+
+  # Attach and detach are limited to the one AWS managed policy this stack
+  # uses, so a role cannot be given AdministratorAccess.
+  statement {
+    sid       = "AttachExecutionPolicyOnly"
+    actions   = ["iam:AttachRolePolicy", "iam:DetachRolePolicy"]
+    resources = local.service_role_arns
+
+    condition {
+      test     = "ArnEquals"
+      variable = "iam:PolicyARN"
+      values   = ["arn:aws:iam::aws:policy/service-role/AmazonECSTaskExecutionRolePolicy"]
+    }
   }
 
   # Terraform may only hand project roles to the services that need them.
   statement {
     sid       = "PassProjectRoles"
     actions   = ["iam:PassRole"]
-    resources = ["arn:aws:iam::${local.account_id}:role/${local.name_prefix}"]
+    resources = local.service_role_arns
 
     condition {
       test     = "StringEquals"
