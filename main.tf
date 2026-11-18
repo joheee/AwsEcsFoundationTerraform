@@ -391,7 +391,14 @@ data "aws_iam_policy_document" "apply" {
     condition {
       test     = "StringEquals"
       variable = "iam:PassedToService"
-      values   = ["vpc-flow-logs.amazonaws.com", "ecs-tasks.amazonaws.com", "monitoring.rds.amazonaws.com"]
+      # RDS evaluates the monitoring role as passed to rds.amazonaws.com; the
+      # role's own trust principal is monitoring.rds.amazonaws.com.
+      values = [
+        "vpc-flow-logs.amazonaws.com",
+        "ecs-tasks.amazonaws.com",
+        "rds.amazonaws.com",
+        "monitoring.rds.amazonaws.com",
+      ]
     }
   }
 
