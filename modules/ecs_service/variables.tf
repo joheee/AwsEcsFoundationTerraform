@@ -95,3 +95,9 @@ variable "container_insights" {
   type        = bool
   default     = false
 }
+
+variable "access_log_retention_days" {
+  description = "Days to keep ALB access logs in S3 before they expire."
+  type        = number
+  default     = 30
+}

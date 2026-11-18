@@ -88,6 +88,110 @@ resource "aws_vpc_security_group_egress_rule" "service_https" {
 # ---------------------------------------------------------------------------
 # Application Load Balancer (HTTP only; HTTPS is a documented stretch)
 # ---------------------------------------------------------------------------
+# ---------------------------------------------------------------------------
+# ALB access logs (CKV_AWS_91). ALB log delivery supports only SSE-S3 (AES256),
+# not KMS, so that is the encryption used. The bucket name carries the account
+# id because S3 names are global; the apply role's S3 permissions match this
+# pattern: <project>-*-alb-logs-<account id>.
+# ---------------------------------------------------------------------------
+data "aws_caller_identity" "current" {}
+
+# ap-southeast-2 predates the 2022 log-delivery service principal, so ELB
+# writes as a regional AWS account.
+data "aws_elb_service_account" "this" {}
+
+resource "aws_s3_bucket" "alb_logs" {
+  bucket = "${var.name}-alb-logs-${data.aws_caller_identity.current.account_id}"
+
+  # Logs only, and staging is destroyed after a demo: let destroy empty it.
+  force_destroy = true
+}
+
+resource "aws_s3_bucket_public_access_block" "alb_logs" {
+  bucket = aws_s3_bucket.alb_logs.id
+
+  block_public_acls       = true
+  block_public_policy     = true
+  ignore_public_acls      = true
+  restrict_public_buckets = true
+}
+
+resource "aws_s3_bucket_ownership_controls" "alb_logs" {
+  bucket = aws_s3_bucket.alb_logs.id
+
+  rule {
+    object_ownership = "BucketOwnerEnforced"
+  }
+}
+
+resource "aws_s3_bucket_server_side_encryption_configuration" "alb_logs" {
+  bucket = aws_s3_bucket.alb_logs.id
+
+  rule {
+    apply_server_side_encryption_by_default {
+      sse_algorithm = "AES256"
+    }
+  }
+}
+
+resource "aws_s3_bucket_lifecycle_configuration" "alb_logs" {
+  bucket = aws_s3_bucket.alb_logs.id
+
+  rule {
+    id     = "expire-logs"
+    status = "Enabled"
+
+    filter {}
+
+    expiration {
+      days = var.access_log_retention_days
+    }
+
+    abort_incomplete_multipart_upload {
+      days_after_initiation = 1
+    }
+  }
+}
+
+data "aws_iam_policy_document" "alb_logs" {
+  statement {
+    sid       = "AlbWritesLogs"
+    actions   = ["s3:PutObject"]
+    resources = ["${aws_s3_bucket.alb_logs.arn}/AWSLogs/${data.aws_caller_identity.current.account_id}/*"]
+
+    principals {
+      type        = "AWS"
+      identifiers = [data.aws_elb_service_account.this.arn]
+    }
+  }
+
+  statement {
+    sid       = "DenyPlainHttp"
+    effect    = "Deny"
+    actions   = ["s3:*"]
+    resources = [aws_s3_bucket.alb_logs.arn, "${aws_s3_bucket.alb_logs.arn}/*"]
+
+    principals {
+      type        = "*"
+      identifiers = ["*"]
+    }
+
+    condition {
+      test     = "Bool"
+      variable = "aws:SecureTransport"
+      values   = ["false"]
+    }
+  }
+}
+
+resource "aws_s3_bucket_policy" "alb_logs" {
+  bucket = aws_s3_bucket.alb_logs.id
+  policy = data.aws_iam_policy_document.alb_logs.json
+
+  # The public access block must exist first or the policy put can race it.
+  depends_on = [aws_s3_bucket_public_access_block.alb_logs]
+}
+
 resource "aws_lb" "this" {
   name                       = "${var.name}-alb"
   load_balancer_type         = "application"
@@ -96,6 +200,14 @@ resource "aws_lb" "this" {
   security_groups            = [aws_security_group.alb.id]
   drop_invalid_header_fields = true
   enable_deletion_protection = var.alb_deletion_protection
+
+  access_logs {
+    bucket  = aws_s3_bucket.alb_logs.id
+    enabled = true
+  }
+
+  # ALB checks it can write to the bucket when logging is switched on.
+  depends_on = [aws_s3_bucket_policy.alb_logs]
 }
 
 resource "aws_lb_target_group" "this" {

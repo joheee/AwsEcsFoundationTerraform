@@ -10,6 +10,9 @@ locals {
   state_bucket_arn = "arn:aws:s3:::${var.state_bucket_name}"
   name_prefix      = "${var.project}-*"
 
+  # ALB access-log buckets: <project>-<env>-alb-logs-<account id>.
+  alb_log_bucket_arn = "arn:aws:s3:::${var.project}-*-alb-logs-${local.account_id}"
+
   # Roles this environment's Terraform creates for services. The apply role is
   # allowed to change only these (see the IAM statements in the apply policy).
   service_role_arns = [
@@ -173,6 +176,16 @@ data "aws_iam_policy_document" "plan" {
     sid       = "StateBucketList"
     actions   = ["s3:ListBucket", "s3:GetBucketVersioning"]
     resources = [local.state_bucket_arn]
+  }
+
+  # Refresh reads the ALB log bucket's settings. Read only, one bucket pattern.
+  statement {
+    sid = "ReadAlbLogBucket"
+    actions = [
+      "s3:GetBucket*", "s3:GetEncryptionConfiguration", "s3:GetLifecycleConfiguration",
+      "s3:GetAccelerateConfiguration", "s3:GetReplicationConfiguration", "s3:ListBucket",
+    ]
+    resources = [local.alb_log_bucket_arn]
   }
 
   statement {
@@ -455,6 +468,28 @@ data "aws_iam_policy_document" "apply" {
   # Load balancers, target groups and listeners are created by name pattern;
   # most ELB create/modify actions cannot be scoped to an ARN that does not
   # exist yet, so "*" is used with the region condition.
+  # S3: only the ALB access-log bucket of this environment, by name pattern
+  # <project>-*-alb-logs-<account id>. The state bucket does not match it.
+  # DeleteObject* and ListBucketVersions let a destroy empty the bucket.
+  statement {
+    sid = "AlbLogBucket"
+    actions = [
+      "s3:CreateBucket", "s3:DeleteBucket", "s3:ListBucket", "s3:ListBucketVersions",
+      "s3:GetBucket*", "s3:GetEncryptionConfiguration", "s3:GetLifecycleConfiguration",
+      "s3:GetAccelerateConfiguration", "s3:GetReplicationConfiguration",
+      "s3:PutBucketPolicy", "s3:DeleteBucketPolicy", "s3:PutBucketPublicAccessBlock",
+      "s3:PutBucketOwnershipControls", "s3:PutEncryptionConfiguration",
+      "s3:PutLifecycleConfiguration", "s3:PutBucketTagging",
+    ]
+    resources = [local.alb_log_bucket_arn]
+  }
+
+  statement {
+    sid       = "AlbLogObjects"
+    actions   = ["s3:DeleteObject", "s3:DeleteObjectVersion"]
+    resources = ["${local.alb_log_bucket_arn}/*"]
+  }
+
   statement {
     sid       = "LoadBalancing"
     actions   = ["elasticloadbalancing:*"]
