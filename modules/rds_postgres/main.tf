@@ -1,5 +1,9 @@
 locals {
   port = 5432
+
+  # "17" or "17.4" -> postgres17. A major version upgrade needs a new group,
+  # which create_before_destroy below handles.
+  parameter_group_family = "postgres${split(".", var.engine_version)[0]}"
 }
 
 resource "aws_db_subnet_group" "this" {
@@ -48,6 +52,30 @@ resource "aws_cloudwatch_log_group" "export" {
   retention_in_days = var.log_retention_days
 }
 
+# CKV2_AWS_30: query logging. DDL statements and anything slower than one
+# second go to the postgresql log, which is exported to CloudWatch below. Both
+# parameters are dynamic, so no reboot is needed. "ddl" rather than "all" keeps
+# application queries (and any values in them) out of the logs.
+resource "aws_db_parameter_group" "this" {
+  name_prefix = "${var.name}-"
+  family      = local.parameter_group_family
+  description = "${var.name}: query logging"
+
+  parameter {
+    name  = "log_statement"
+    value = "ddl"
+  }
+
+  parameter {
+    name  = "log_min_duration_statement"
+    value = tostring(var.log_min_duration_ms)
+  }
+
+  lifecycle {
+    create_before_destroy = true
+  }
+}
+
 resource "aws_db_instance" "this" {
   identifier     = var.name
   engine         = "postgres"
@@ -82,6 +110,8 @@ resource "aws_db_instance" "this" {
 
   iam_database_authentication_enabled = true
   performance_insights_enabled        = true
+
+  parameter_group_name = aws_db_parameter_group.this.name
 
   # CKV_AWS_129: ship the engine and upgrade logs to CloudWatch.
   enabled_cloudwatch_logs_exports = local.log_exports

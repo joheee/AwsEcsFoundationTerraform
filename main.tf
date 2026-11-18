@@ -463,11 +463,14 @@ data "aws_iam_policy_document" "apply" {
       "rds:RebootDBInstance", "rds:CreateDBSubnetGroup", "rds:ModifyDBSubnetGroup",
       "rds:DeleteDBSubnetGroup", "rds:AddTagsToResource", "rds:RemoveTagsFromResource",
       "rds:ListTagsForResource", "rds:CreateDBSnapshot",
+      "rds:CreateDBParameterGroup", "rds:ModifyDBParameterGroup",
+      "rds:DeleteDBParameterGroup",
     ]
     resources = [
       "arn:aws:rds:${var.aws_region}:${local.account_id}:db:${local.name_prefix}",
       "arn:aws:rds:${var.aws_region}:${local.account_id}:subgrp:${local.name_prefix}",
       "arn:aws:rds:${var.aws_region}:${local.account_id}:snapshot:${local.name_prefix}",
+      "arn:aws:rds:${var.aws_region}:${local.account_id}:pg:${local.name_prefix}",
     ]
   }
 

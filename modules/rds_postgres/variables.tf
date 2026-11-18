@@ -88,3 +88,9 @@ variable "log_retention_days" {
   type        = number
   default     = 14
 }
+
+variable "log_min_duration_ms" {
+  description = "Log statements slower than this many milliseconds (query logging)."
+  type        = number
+  default     = 1000
+}
