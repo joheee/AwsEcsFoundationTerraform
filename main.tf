@@ -318,6 +318,9 @@ data "aws_iam_policy_document" "apply" {
     resources = [
       "arn:aws:logs:${var.aws_region}:${local.account_id}:log-group:/${local.name_prefix}",
       "arn:aws:logs:${var.aws_region}:${local.account_id}:log-group:/${local.name_prefix}:*",
+      # RDS log exports: /aws/rds/instance/<db id>/<log type>.
+      "arn:aws:logs:${var.aws_region}:${local.account_id}:log-group:/aws/rds/instance/${local.name_prefix}/*",
+      "arn:aws:logs:${var.aws_region}:${local.account_id}:log-group:/aws/rds/instance/${local.name_prefix}/*:*",
     ]
   }
 

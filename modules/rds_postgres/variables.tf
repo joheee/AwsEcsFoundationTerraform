@@ -82,3 +82,9 @@ variable "skip_final_snapshot" {
   type        = bool
   default     = true
 }
+
+variable "log_retention_days" {
+  description = "Retention of the exported PostgreSQL log groups."
+  type        = number
+  default     = 14
+}

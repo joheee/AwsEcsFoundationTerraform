@@ -34,6 +34,20 @@ resource "aws_vpc_security_group_ingress_rule" "from_clients" {
   referenced_security_group_id = var.allowed_security_group_ids[count.index]
 }
 
+# RDS writes these log groups itself once log exports are on. Creating them
+# here gives them a retention period; otherwise they never expire and are left
+# behind after a destroy. Names are fixed by RDS: /aws/rds/instance/<id>/<log>.
+locals {
+  log_exports = ["postgresql", "upgrade"]
+}
+
+resource "aws_cloudwatch_log_group" "export" {
+  for_each = toset(local.log_exports)
+
+  name              = "/aws/rds/instance/${var.name}/${each.key}"
+  retention_in_days = var.log_retention_days
+}
+
 resource "aws_db_instance" "this" {
   identifier     = var.name
   engine         = "postgres"
@@ -68,4 +82,10 @@ resource "aws_db_instance" "this" {
 
   iam_database_authentication_enabled = true
   performance_insights_enabled        = true
+
+  # CKV_AWS_129: ship the engine and upgrade logs to CloudWatch.
+  enabled_cloudwatch_logs_exports = local.log_exports
+
+  # The log groups must exist first, or RDS creates them without retention.
+  depends_on = [aws_cloudwatch_log_group.export]
 }
