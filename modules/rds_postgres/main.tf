@@ -76,6 +76,47 @@ resource "aws_db_parameter_group" "this" {
   }
 }
 
+# CKV_AWS_118: enhanced monitoring (OS metrics every 60 s). RDS needs a role it
+# can assume to publish them. The role name must stay "<name>-rds-monitoring":
+# the root module's apply policy lists it in service_role_arns.
+data "aws_caller_identity" "current" {}
+
+data "aws_region" "current" {}
+
+data "aws_iam_policy_document" "monitoring_trust" {
+  statement {
+    actions = ["sts:AssumeRole"]
+
+    principals {
+      type        = "Service"
+      identifiers = ["monitoring.rds.amazonaws.com"]
+    }
+
+    # Confused-deputy guard: only this account's instance with this name.
+    condition {
+      test     = "StringEquals"
+      variable = "aws:SourceAccount"
+      values   = [data.aws_caller_identity.current.account_id]
+    }
+
+    condition {
+      test     = "ArnLike"
+      variable = "aws:SourceArn"
+      values   = ["arn:aws:rds:${data.aws_region.current.region}:${data.aws_caller_identity.current.account_id}:db:${var.name}"]
+    }
+  }
+}
+
+resource "aws_iam_role" "monitoring" {
+  name               = "${var.name}-rds-monitoring"
+  assume_role_policy = data.aws_iam_policy_document.monitoring_trust.json
+}
+
+resource "aws_iam_role_policy_attachment" "monitoring" {
+  role       = aws_iam_role.monitoring.name
+  policy_arn = "arn:aws:iam::aws:policy/service-role/AmazonRDSEnhancedMonitoringRole"
+}
+
 resource "aws_db_instance" "this" {
   identifier     = var.name
   engine         = "postgres"
@@ -113,9 +154,15 @@ resource "aws_db_instance" "this" {
 
   parameter_group_name = aws_db_parameter_group.this.name
 
+  monitoring_interval = var.monitoring_interval
+  monitoring_role_arn = aws_iam_role.monitoring.arn
+
   # CKV_AWS_129: ship the engine and upgrade logs to CloudWatch.
   enabled_cloudwatch_logs_exports = local.log_exports
 
   # The log groups must exist first, or RDS creates them without retention.
-  depends_on = [aws_cloudwatch_log_group.export]
+  depends_on = [
+    aws_cloudwatch_log_group.export,
+    aws_iam_role_policy_attachment.monitoring,
+  ]
 }

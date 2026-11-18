@@ -13,7 +13,7 @@ locals {
   # Roles this environment's Terraform creates for services. The apply role is
   # allowed to change only these (see the IAM statements in the apply policy).
   service_role_arns = [
-    for r in ["ecs-execution", "ecs-task", "vpc-flow-logs"] :
+    for r in ["ecs-execution", "ecs-task", "vpc-flow-logs", "rds-monitoring"] :
     "arn:aws:iam::${local.account_id}:role/${local.name}-${r}"
   ]
 
@@ -364,8 +364,9 @@ data "aws_iam_policy_document" "apply" {
     resources = local.service_role_arns
   }
 
-  # Attach and detach are limited to the one AWS managed policy this stack
-  # uses, so a role cannot be given AdministratorAccess.
+  # Attach and detach are limited to the two AWS managed policies this stack
+  # uses (ECS task execution, RDS enhanced monitoring), so a role cannot be
+  # given AdministratorAccess.
   statement {
     sid       = "AttachExecutionPolicyOnly"
     actions   = ["iam:AttachRolePolicy", "iam:DetachRolePolicy"]
@@ -374,7 +375,10 @@ data "aws_iam_policy_document" "apply" {
     condition {
       test     = "ArnEquals"
       variable = "iam:PolicyARN"
-      values   = ["arn:aws:iam::aws:policy/service-role/AmazonECSTaskExecutionRolePolicy"]
+      values = [
+        "arn:aws:iam::aws:policy/service-role/AmazonECSTaskExecutionRolePolicy",
+        "arn:aws:iam::aws:policy/service-role/AmazonRDSEnhancedMonitoringRole",
+      ]
     }
   }
 
@@ -387,7 +391,7 @@ data "aws_iam_policy_document" "apply" {
     condition {
       test     = "StringEquals"
       variable = "iam:PassedToService"
-      values   = ["vpc-flow-logs.amazonaws.com", "ecs-tasks.amazonaws.com"]
+      values   = ["vpc-flow-logs.amazonaws.com", "ecs-tasks.amazonaws.com", "monitoring.rds.amazonaws.com"]
     }
   }
 

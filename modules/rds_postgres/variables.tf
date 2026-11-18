@@ -94,3 +94,9 @@ variable "log_min_duration_ms" {
   type        = number
   default     = 1000
 }
+
+variable "monitoring_interval" {
+  description = "Enhanced monitoring interval in seconds (0 turns it off)."
+  type        = number
+  default     = 60
+}
