@@ -138,6 +138,12 @@ variable "db_backup_retention_days" {
   default     = 7
 }
 
+variable "db_apply_immediately" {
+  description = "Apply database changes immediately instead of in the maintenance window (staging)."
+  type        = bool
+  default     = false
+}
+
 variable "db_deletion_protection" {
   description = "Deletion protection on the database (prod)."
   type        = bool

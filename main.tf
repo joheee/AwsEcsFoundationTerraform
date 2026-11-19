@@ -92,6 +92,7 @@ module "rds_postgres" {
   allocated_storage     = var.db_allocated_storage
   multi_az              = var.db_multi_az
   backup_retention_days = var.db_backup_retention_days
+  apply_immediately     = var.db_apply_immediately
   deletion_protection   = var.db_deletion_protection
   skip_final_snapshot   = var.db_skip_final_snapshot
 }

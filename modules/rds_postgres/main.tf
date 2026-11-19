@@ -150,6 +150,10 @@ resource "aws_db_instance" "this" {
   # of charging for extended support, so plan the next major version before then.
   engine_lifecycle_support = "open-source-rds-extended-support-disabled"
 
+  # Without this, RDS accepted the lifecycle change but kept the old value until
+  # the maintenance window. Off by default so prod changes wait for its window.
+  apply_immediately = var.apply_immediately
+
   deletion_protection       = var.deletion_protection
   skip_final_snapshot       = var.skip_final_snapshot
   final_snapshot_identifier = var.skip_final_snapshot ? null : "${var.name}-final"
