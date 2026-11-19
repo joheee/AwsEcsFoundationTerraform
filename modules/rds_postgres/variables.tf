@@ -100,9 +100,3 @@ variable "monitoring_interval" {
   type        = number
   default     = 60
 }
-
-variable "apply_immediately" {
-  description = "Apply instance changes now instead of in the next maintenance window (on in staging only)."
-  type        = bool
-  default     = false
-}
