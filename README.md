@@ -229,8 +229,12 @@ cost.
 
 ## Security scan (Checkov)
 
-Checkov runs in the Terraform workflow and currently reports 18 findings
-without failing the run (195 checks pass). They are accepted or planned:
+Checkov runs in the Terraform workflow without failing the run. At `9f8c0be`
+it reports 23 findings with 235 checks passing (Checkov 3.4.5, directory scan),
+up from 18 and 195 at `6a87780`: four findings were fixed and the fixes added
+nine of their own (the ALB log bucket and new log groups). The before and after
+scans and the fixes are written up in the security audit,
+[joheee/AwsSecurityAudit](https://github.com/joheee/AwsSecurityAudit).
 
 | Finding | Status |
 |---|---|
@@ -242,7 +246,8 @@ without failing the run (195 checks pass). They are accepted or planned:
 | Log groups and Performance Insights use AWS-owned or default keys (CKV_AWS_158, CKV_AWS_354) | Accepted: a customer-managed key adds cost and key-policy upkeep |
 | Writable root filesystem (CKV_AWS_336) | Accepted: the sample nginx image needs it |
 | AZ data source not pinned (CKV_AWS_394) | Accepted: AZs are sliced by count |
-| RDS log exports, query logging, enhanced monitoring, ALB access logs (CKV_AWS_129, CKV2_AWS_30, CKV_AWS_118, CKV_AWS_91) | Planned improvements |
+| ALB access-log bucket (CKV_AWS_18, CKV_AWS_21, CKV_AWS_144, CKV_AWS_145, CKV2_AWS_62) | Accepted: a log-only bucket with SSE-S3 (the only encryption ALB logs support), public access blocked, TLS-only policy and a 30-day lifecycle |
+| Fixed: RDS log exports (CKV_AWS_129), query logging (CKV2_AWS_30), enhanced monitoring (CKV_AWS_118), ALB access logs (CKV_AWS_91) | Fixed in `e51ea0e`, `e101810`, `5b0232f` + `056cb9c` and `5403238`, applied to staging |
 
 ## Cost per environment
 
