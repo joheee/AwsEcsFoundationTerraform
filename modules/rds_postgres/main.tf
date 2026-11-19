@@ -145,6 +145,11 @@ resource "aws_db_instance" "this" {
   copy_tags_to_snapshot      = true
   auto_minor_version_upgrade = true
 
+  # Prowler rds_instance_extended_support: do not enrol in paid RDS Extended
+  # Support. After the engine's standard support ends, RDS upgrades it instead
+  # of charging for extended support, so plan the next major version before then.
+  engine_lifecycle_support = "open-source-rds-extended-support-disabled"
+
   deletion_protection       = var.deletion_protection
   skip_final_snapshot       = var.skip_final_snapshot
   final_snapshot_identifier = var.skip_final_snapshot ? null : "${var.name}-final"
