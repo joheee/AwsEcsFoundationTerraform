@@ -181,6 +181,10 @@ resource "aws_cloudwatch_log_group" "flow_logs" {
   retention_in_days = var.flow_log_retention_days
 }
 
+data "aws_caller_identity" "current" {}
+
+data "aws_region" "current" {}
+
 data "aws_iam_policy_document" "flow_logs_trust" {
   statement {
     actions = ["sts:AssumeRole"]
@@ -188,6 +192,19 @@ data "aws_iam_policy_document" "flow_logs_trust" {
     principals {
       type        = "Service"
       identifiers = ["vpc-flow-logs.amazonaws.com"]
+    }
+
+    # Confused-deputy guard: only this account's VPC flow logs.
+    condition {
+      test     = "StringEquals"
+      variable = "aws:SourceAccount"
+      values   = [data.aws_caller_identity.current.account_id]
+    }
+
+    condition {
+      test     = "ArnLike"
+      variable = "aws:SourceArn"
+      values   = ["arn:aws:ec2:${data.aws_region.current.region}:${data.aws_caller_identity.current.account_id}:vpc-flow-log/*"]
     }
   }
 }
